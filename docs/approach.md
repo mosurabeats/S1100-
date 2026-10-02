@@ -46,17 +46,21 @@ stock OS floppy ──akaidisk get──▶ stock_os.bin
   The repo is effectively a patch: anyone with a stock S1100 OS disk can
   rebuild the image themselves.
 
-## What "FX" could mean on an S1100
+## Feature direction: a mod pack
 
-S900FX passes live input through the 12-bit converters to add their
-character. The S1100 is already a clean 16-bit sampler, so the useful
-equivalents are things it can't do now:
+The target is closer to the vubeatz MPC2000/2000XL mods than to a single
+effect: a set of independent features (vintage sampler presets, auto chop,
+lazy chop, transpose, input thru) that you choose at build time. Each mod
+is one file in `mods/` (its OS hooks plus a `MOD_<NAME>` build flag), and
+`src/fx.asm` compiles in only the selected ones.
 
-- **Live passthrough with degradation**: input → ADC → bit-depth and
-  sample-rate reduction → DAC, with 12-bit, 8-bit and SP-1200-style modes.
-- Real-time use of the S1100's existing digital filters and effects
-  send/return on the live input.
-- Small quality-of-life patches: a faster boot, default settings, extra
-  MIDI CC mappings.
+DSP code is written once as a Python reference model (`tools/vintage.py`)
+and once in V50 assembly (`src/dsp/`). The tests run the assembly in an
+x86-16 emulator and require the output to be **bit-exact** with the
+model. So the algorithm can be tuned on a computer with WAV files, and the
+on-hardware version is known to sound identical.
 
-Which of these comes first is a product decision. See `roadmap.md`.
+Both DSP cores are **streaming**: they process any chunk size and keep
+their state between calls. That is required because the V50 can only
+address 1 MB, while S1100 sample RAM is 2–32 MB behind custom hardware, so
+the OS will have to feed samples through in pieces.

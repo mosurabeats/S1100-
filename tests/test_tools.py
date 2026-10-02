@@ -98,6 +98,22 @@ asm = "call PAYLOAD_OFF"
         with self.assertRaisesRegex(patch.PatchError, "nasm failed"):
             self.build('[[patch]]\nname="x"\noffset=0\nexpect="90"\nasm="mov eax, 1"\n')
 
+    def test_mods_merge_and_define(self):
+        base = tomllib.loads('[payload]\nsource = "fx.asm"\n')
+        mod = tomllib.loads('[defines]\nMOD_X = 1\n[[patch]]\nname="b"\nfind_text="S1100"\nreplace_text="S11FX"\n')
+        spec = patch.merge_specs([base, mod])
+        self.assertEqual(spec["defines"], {"MOD_X": 1})
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "fx.asm"), "w") as f:
+                f.write("bits 16\ncpu 186\norg PAYLOAD_OFF\n%ifdef MOD_X\ndb 'X'\n%endif\n")
+            out, _ = patch.build(spec, self.OS, tmp)
+        self.assertTrue(out.endswith(b"X"))
+        self.assertIn(b"S11FX", out)
+        with self.assertRaisesRegex(patch.PatchError, "may not set"):
+            patch.merge_specs([base, base])
+        with self.assertRaisesRegex(patch.PatchError, "duplicate"):
+            patch.merge_specs([base, mod, mod])
+
     def test_sha_guard(self):
         with self.assertRaisesRegex(patch.PatchError, "sha256"):
             self.build('[base]\nsha256="00"\n')

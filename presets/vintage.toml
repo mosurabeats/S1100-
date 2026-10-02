@@ -1,0 +1,74 @@
+# Vintage sampler presets for the S1100FX "VINTAGE" mod.
+#
+# Each preset turns a clean 16-bit S1100 sample into something closer to
+# the character of an older machine:
+#   bits   converter resolution; low bits are truncated (floor), like a
+#          plain ADC with no dither
+#   rate   the old machine's sample rate in Hz, emulated by sample-and-
+#          hold with no anti-alias filter -- the aliasing is the point
+#   gain   pre-gain in percent before quantising (drive into the
+#          converter, clips hard like a real one)
+#
+# Rates and bit depths are the published specs for each machine; the
+# rest of their sound (filters, analogue output stages, pitching
+# artefacts) is not modelled yet. `name` is shown on the S1100 LCD, so
+# keep it to 10 characters from the Akai charset (A-Z 0-9 space # + - .).
+#
+# After editing, regenerate the assembler table:
+#   python3 tools/vintage.py gen-inc > src/dsp/presets.inc
+
+[[preset]]
+id = "sp1200"
+name = "SP-1200"
+bits = 12
+rate = 26040
+gain = 100
+
+[[preset]]
+id = "sp12"
+name = "SP-12"
+bits = 12
+rate = 27500
+gain = 100
+
+[[preset]]
+id = "mpc60"
+name = "MPC60"
+bits = 12
+rate = 40000
+gain = 100
+
+[[preset]]
+id = "s900"
+name = "S900"
+bits = 12
+rate = 40000
+gain = 100
+
+[[preset]]
+id = "s950"
+name = "S950"
+bits = 12
+rate = 48000
+gain = 100
+
+[[preset]]
+id = "mirage"
+name = "MIRAGE"
+bits = 8
+rate = 33000
+gain = 100
+
+[[preset]]
+id = "12bit"
+name = "12 BIT"
+bits = 12
+rate = 0          # 0 = keep the sample's own rate (bit reduction only)
+gain = 100
+
+[[preset]]
+id = "crush8"
+name = "8 BIT HOT"
+bits = 8
+rate = 22050
+gain = 200

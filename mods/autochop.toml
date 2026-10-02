@@ -1,0 +1,15 @@
+# AUTOCHOP: find the hits in a sample and split it into up to N slices
+# (transient detection with zero-crossing snap), or into N equal slices.
+#
+# Done: DSP core src/dsp/chop.asm (bit-exact with tools/vintage.py,
+#       emulator-tested, finds every hit in the drum test signal and
+#       ignores sustained notes).
+# Needs reverse engineering before it can be hooked:
+#   - sample RAM chunk access (same as VINTAGE)
+#   - creating samples from regions, or setting start/end/loop points
+#   - building a program with one keygroup per slice, mapped up the keyboard
+#     (the S1000 SysEx docs describe the program/keygroup layout and are
+#     a good guide to the in-memory structures)
+
+[defines]
+MOD_AUTOCHOP = 1

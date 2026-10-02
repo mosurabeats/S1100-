@@ -1,0 +1,18 @@
+# VINTAGE: re-render a sample through a vintage sampler preset
+# (SP-1200, SP-12, MPC60, S900, S950, Mirage, 12-bit, 8-bit hot).
+#
+# Done: DSP core src/dsp/crush.asm (bit-exact with tools/vintage.py,
+#       emulator-tested), preset table src/dsp/presets.inc.
+# Needs reverse engineering (docs/roadmap.md M2) before it can be hooked:
+#   - how the OS reads/writes sample RAM in chunks (EDIT SAMPLE code path)
+#   - the sample header: rate field (for decimate mode) and length
+#   - a free slot in the EDIT SAMPLE menu + the LCD/knob routines
+
+[defines]
+MOD_VINTAGE = 1
+
+# [[patch]]
+# name = "vintage-menu-entry"
+# offset = 0x0000
+# expect = "..."
+# asm = "call PAYLOAD_OFF + ..."

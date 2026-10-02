@@ -1,0 +1,12 @@
+# BANNER: show S1100FX on the boot screen. The first mod to try on real
+# hardware -- text only, no code -- to prove the build pipeline.
+#
+# Find the boot banner with:  python3 tools/disasm.py strings build/stock_os.bin
+# then set find_text to it exactly and replace_text to a same-length string.
+# If find_text isn't found, patch.py lists similar strings to choose from.
+
+[[patch]]
+name = "boot-banner"
+enabled = false                 # set true once find_text is confirmed
+find_text = "S1100"
+replace_text = "S11FX"

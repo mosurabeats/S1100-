@@ -59,5 +59,18 @@ fx_tick:
 fx_audio_isr:
     ret
 
+; --- mods ---------------------------------------------------------------------
+; Each mod is compiled in only when its spec in mods/ is selected (the spec's
+; [defines] table sets MOD_<NAME>). DSP cores are shared and bit-exact with
+; tools/vintage.py; see tests/test_dsp.py.
+
+%ifdef MOD_VINTAGE
+%include "dsp/presets.inc"
+%include "dsp/crush.asm"
+%endif
+%ifdef MOD_AUTOCHOP
+%include "dsp/chop.asm"
+%endif
+
 ; --- state ------------------------------------------------------------------
 fx_enabled:     db 0

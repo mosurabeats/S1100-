@@ -20,6 +20,11 @@ Spec format (see patches/s1100fx.toml):
   find_text = "S1100"     # or find = "hex bytes", or offset + expect
   replace_text = "S1KFX"  # or replace = "hex bytes", or asm = "..."
 
+Mods: extra spec files can be passed after the base spec. Their
+`[[patch]]` entries are added to the base spec's, and their `[defines]`
+tables become NASM defines (e.g. MOD_VINTAGE = 1) so the payload compiles
+in only the selected features.
+
 `asm` patches are assembled with `bits 16`, `cpu 186` and `org` set to the
 patch's `org` key (default: the file offset). These NASM macros are defined
 for both the payload and asm patches:
@@ -101,6 +106,25 @@ def suggest(data, text):
     return ("\nsimilar strings in binary:\n" + "\n".join(found[:20])) if found else ""
 
 
+def merge_specs(specs):
+    """Combine a base spec with mod specs: concatenate patches, merge
+    defines. Only the base spec may set [base] and [payload]."""
+    merged = dict(specs[0])
+    merged["patch"] = list(specs[0].get("patch", []))
+    merged["defines"] = dict(specs[0].get("defines", {}))
+    for mod in specs[1:]:
+        for key in ("base", "payload"):
+            if key in mod:
+                raise PatchError(f"mod spec may not set [{key}]")
+        merged["patch"] += mod.get("patch", [])
+        merged["defines"].update(mod.get("defines", {}))
+    names = [p.get("name") for p in merged["patch"]]
+    dupes = {n for n in names if names.count(n) > 1}
+    if dupes:
+        raise PatchError(f"duplicate patch names: {sorted(dupes)}")
+    return merged
+
+
 def build(spec, os_data, spec_dir):
     base = spec.get("base", {})
     want = base.get("sha256")
@@ -113,7 +137,7 @@ def build(spec, os_data, spec_dir):
     payload_cfg = spec.get("payload")
     align = payload_cfg.get("align", 16) if payload_cfg else 16
     payload_off = -(-len(out) // align) * align
-    defines = {"PAYLOAD_OFF": payload_off, "OS_SIZE": len(os_data)}
+    defines = {**spec.get("defines", {}), "PAYLOAD_OFF": payload_off, "OS_SIZE": len(os_data)}
 
     # Locate everything against the *original* bytes first so patches
     # cannot accidentally match each other's output.
@@ -172,16 +196,20 @@ def lint_186(blob, label):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Apply a patch spec to an Akai OS binary")
-    p.add_argument("spec")
+    p = argparse.ArgumentParser(description="Apply patch specs to an Akai OS binary")
     p.add_argument("input", help="stock OS binary (extracted with akaidisk.py get)")
     p.add_argument("output")
+    p.add_argument("spec", help="base spec (sets [payload])")
+    p.add_argument("mods", nargs="*", help="mod specs to include")
     args = p.parse_args(argv)
-    with open(args.spec, "rb") as f:
-        spec = tomllib.load(f)
+    specs = []
+    for path in [args.spec, *args.mods]:
+        with open(path, "rb") as f:
+            specs.append(tomllib.load(f))
     with open(args.input, "rb") as f:
         os_data = f.read()
     try:
+        spec = merge_specs(specs)
         out, _ = build(spec, os_data, os.path.dirname(os.path.abspath(args.spec)))
     except PatchError as exc:
         print("error:", exc, file=sys.stderr)

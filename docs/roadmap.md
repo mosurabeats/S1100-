@@ -6,6 +6,8 @@
 - `tools/patch.py`: apply verified patches and append NASM-assembled code.
 - `tools/disasm.py`: strings (ASCII and Akai charset), disassembly, I/O-port
   map, cross-references, call-site search.
+- `tools/vintage.py` + `src/dsp/`: vintage and auto-chop DSP, emulator-tested
+  bit-exact against the Python model.
 - Unit tests: `make test`.
 
 ## M1: Prove the pipeline (needs a stock OS disk)
@@ -34,18 +36,33 @@
   strings), playback IRQ.
 - Record the findings in `docs/os-map.md` so patches can refer to them.
 
-## M3: First hook
+## M3: First hooks
 - Hook the main loop (vector `PAYLOAD_OFF + 3`) and add an S1100FX page to
-  the Utility menu showing the build date, like S950FX does.
+  the Utility menu showing the build date and selected mods.
+- Find how the OS reads and writes sample RAM in chunks (the EDIT SAMPLE
+  code). Both DSP cores are already streaming, so they plug straight in.
 
-## M4: Real-time FX
-- Find the ADC read and DAC write paths, then build a passthrough loop
-  driven by the sample-rate timer IRQ (vector `PAYLOAD_OFF + 6`).
-- Add bit-depth and sample-rate reduction, with controls on the FX page.
+## M4: Feature mods
+Most needed OS knowledge first:
+
+| Mod | Built so far | Still needs from the OS |
+|---|---|---|
+| `vintage` | `crush.asm` + preset table, bit-exact with `vintage.py` | Sample RAM access, sample header (rate/length), EDIT SAMPLE menu slot |
+| `autochop` | `chop.asm` transient detector, bit-exact with `vintage.py` | The above, plus creating samples/regions and a program with one keygroup per slice |
+| `equal-chop` | Model (`vintage.py chop --equal`) | Same as `autochop` |
+| `lazychop` | Nothing yet | Playback position; mark regions with MIDI keys or the front panel while the sample plays (like vubeatz Lazy chop) |
+| `transpose` | Nothing yet | Program/keygroup tuning fields; a whole-program transpose and wider tuning range |
+| `inputthru` | Nothing yet | ADC/DAC ports and sample-rate timer IRQ (vector `PAYLOAD_OFF + 6`): live input through the vintage presets |
+
+**CPU budget (estimate).** In the emulator, `crush` runs about 16
+instructions per sample and `chop` about 32 (two `IMUL`s). On a 10 MHz
+V50 that is very roughly 200–500 cycles per sample, so processing a
+stored sample takes about 1–2× its playing time. Fine for an edit-page
+action. `inputthru` at 44.1 kHz would use nearly all the CPU, so it will
+probably run at the preset's own lower rate, or need a hand-optimized
+loop. Measure on hardware before committing to it.
 
 ## M5: Release
-- Ship `.img` and `.hfe` (HxC's `hxcfe` converts between them) with a
-  README, like S950FX.
-- Decide on distribution. Either publish full images (contains Akai code)
-  or publish the patch spec and payload, and have users run `make` on their
-  own stock disk.
+- Ship the way vubeatz does: the patcher plus mod specs. Users run it on
+  their own stock OS disk and get `.img`/`.hfe` files out, so no Akai code
+  is redistributed.
