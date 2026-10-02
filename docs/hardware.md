@@ -6,7 +6,7 @@ them.
 
 | Item | Value | Confidence |
 |---|---|---|
-| CPU | NEC µPD70216GF-10 (**V50**), 10 MHz | Reported in hardware listings. **Verify** on the board |
+| CPU | NEC µPD70216GF-10 (**V50**), 10 MHz | Confirmed: the OS programs the V50 relocation registers (see os-map.md) |
 | Instruction set | 8086/80186 (+ V-series extras we don't use) | Follows from V50 |
 | CPU address space | 1 MB, real-mode segment:offset | Follows from V50 |
 | Firmware | Two EPROMs on the main board (even/odd bytes of a 16-bit bus) | High: these are routinely swapped for upgrades |
@@ -15,7 +15,7 @@ them.
 | Sample RAM | 2 MB stock, 32 MB max (EXM008 boards) | High |
 | Sample RAM access | Must sit behind custom gate arrays, because 2–32 MB exceeds the V50's 1 MB space | Inferred. **Verify** |
 | Audio | 16-bit converters, 24-bit internal processing, digital filters, effects send/return | High |
-| Floppy | Akai S1000 format, HD 1.6 MB (80×2×10×1024 B); DD 800 KB also readable | High |
+| Floppy | Akai S1000 format, HD 1.6 MB (80×2×10×1024 B); DD 800 KB also readable | Confirmed on Akai's OS disks |
 | Floppy emulator | FlashFloppy (Gotek) supports it with `host = akai` in FF.CFG | High |
 
 ## V50 specifics that matter for reverse engineering
@@ -38,10 +38,14 @@ readable:
   real-time processing)
 - everything else → custom gate arrays, LCD, front-panel, FDC, SCSI
 
+> **Update:** the OS map, the V50 peripheral addresses and the boot
+> sequence are now in [os-map.md](os-map.md).
+
 ## Unknowns to resolve (milestone 2)
 
-1. Where the ROM loads the disk OS in RAM, and its entry point.
-2. Whether the OS file has a header before the code.
+1. ~~Where the ROM loads the disk OS in RAM, and its entry point.~~ Physical 0, `0000:0040`.
+2. ~~Whether the OS file has a header before the code.~~ No header: it is a
+   memory image starting with the interrupt vectors.
 3. Which I/O ports are the ADC and DAC (or the gate-array registers in
    front of them), and how they're clocked.
 4. LCD write routine (40×8 character LCD) and front-panel/knob input.

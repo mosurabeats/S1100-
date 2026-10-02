@@ -1,12 +1,11 @@
-# BANNER: show S1100FX on the boot screen. The first mod to try on real
-# hardware -- text only, no code -- to prove the build pipeline.
+# BANNER: put S1100FX on screen -- text only, no code. The first mod to try
+# on real hardware: build with `make first-test` (no payload, OS size
+# unchanged) to prove the disk image boots before adding new code.
 #
-# Find the boot banner with:  python3 tools/disasm.py strings build/stock_os.bin
-# then set find_text to it exactly and replace_text to a same-length string.
-# If find_text isn't found, patch.py lists similar strings to choose from.
+# The boot "AKAI" banner is in the ROM, not the OS file, so this renames
+# the "PROGRAMS IN MEMORY" page title (MIDI mode program list).
 
 [[patch]]
-name = "boot-banner"
-enabled = false                 # set true once find_text is confirmed
-find_text = "S1100"
-replace_text = "S11FX"
+name = "banner-programs-title"
+find_text = "PROGRAMS IN MEMORY"
+replace_text = "S1100FX  PROGRAMS "

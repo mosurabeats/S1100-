@@ -45,6 +45,31 @@ class AkaiDiskTest(unittest.TestCase):
         self.assertEqual((e2.type, e2.osver), (0x63, 0x0440))
         self.assertEqual(d.check(), [])
 
+    def test_slot_lookup_keeps_raw_name(self):
+        d = blank_hd()
+        e = d.put("X", b"os", 0x63, eof_code=EOF)
+        raw = b"\x20" * 12  # the S1100 OS file's name bytes
+        e.name_raw = raw
+        d.write_entry(e)
+        self.assertIsNone(d.find("#1"))
+        e2 = d.replace("#0", b"new os")
+        self.assertEqual(e2.name_raw, raw)
+        self.assertEqual(d.read_file(d.find("#0")), b"new os")
+
+    def test_defragment_after_growing_first_file(self):
+        d = blank_hd()
+        d.put("OS", b"o" * 3000, 0x63, eof_code=EOF)
+        d.put("PROG", b"p" * 300, 0x70, eof_code=EOF)
+        e = d.replace("#0", b"O" * 5000)
+        self.assertFalse(d.contiguous(e))
+        d.defragment()
+        self.assertEqual(d.check(), [])
+        os_e, prog = d.find("#0"), d.find("#1")
+        self.assertTrue(d.contiguous(os_e) and d.contiguous(prog))
+        self.assertEqual((os_e.start, prog.start), (5, 10))
+        self.assertEqual(d.read_file(os_e), b"O" * 5000)
+        self.assertEqual(d.read_file(prog), b"p" * 300)
+
     def test_detects_corruption(self):
         d = blank_hd()
         e = d.put("A", b"x" * 3000, 1, eof_code=EOF)
@@ -113,6 +138,43 @@ asm = "call PAYLOAD_OFF"
             patch.merge_specs([base, base])
         with self.assertRaisesRegex(patch.PatchError, "duplicate"):
             patch.merge_specs([base, mod, mod])
+
+    def test_segments_payload_org_and_loader_patch(self):
+        out, _ = self.build("""
+[[segment]]
+seg = 0x3000
+file_base = 16
+[payload]
+source = "fx.asm"
+segment = 0x3000
+[[patch]]
+name = "len"
+requires_payload = true
+offset = 48
+expect = "e8 10 00"
+asm = "mov ax, OUT_PARAS"
+""")
+        # payload at file 64 -> 3000:0030; `jmp near entry` jumps to itself
+        self.assertEqual(out[64:67], b"\xe9\xfd\xff")
+        self.assertEqual(out[48:51], bytes([0xB8, 5, 0]))  # ceil(69 / 16)
+        out2, _ = patch.build(tomllib.loads(
+            '[[patch]]\nname="len"\nrequires_payload=true\noffset=48\nexpect="e8 10 00"\nasm="nop"\n'),
+            self.OS, ".", with_payload=False)
+        self.assertEqual(out2, self.OS)
+
+    def test_asm_patch_in_segment(self):
+        out, _ = self.build("""
+[[segment]]
+seg = 0x1000
+file_base = 32
+[[patch]]
+name = "jmp"
+seg = 0x1000
+offset = 48
+expect = "e8 10 00"
+asm = "jmp short 0x10"
+""")
+        self.assertEqual(out[48:50], b"\xeb\xfe")  # org 0x10: jump to self
 
     def test_sha_guard(self):
         with self.assertRaisesRegex(patch.PatchError, "sha256"):

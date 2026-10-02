@@ -2,15 +2,17 @@
 """Read and write Akai S1000/S1100-format floppy images (.img).
 
 The S1000 family (S1000, S1100, S3000...) uses its own floppy filesystem,
-not FAT12. Layout as implemented here (cross-check against akaiutil and a
-real stock OS disk before trusting writes -- run `probe` first):
+not FAT12. Layout as implemented here (verified against the S1000 v4.40 and
+S1100 v4.30 OS disks; run `probe` on any new image first):
 
   * 1024-byte blocks. DD disk = 800 blocks (819200 bytes),
     HD disk = 1600 blocks (1638400 bytes, 80 cyl x 2 heads x 10 x 1024).
   * Directory: 64 entries x 24 bytes at offset 0x000.
       name[12]   Akai character set (see AKAI_CHARS)
-      unk[4]
-      type[1]    file type byte (OS, sample, program...)
+      pad[4]     0x20 on Akai-written disks
+      type[1]    file type; 0 = unused slot (the name may be stale)
+                 0x63 'c' OS, 0x70 'p' program, 0x73 's' sample,
+                 0x78 'x' effects, 0x64 'd' drum inputs
       size[3]    little-endian byte count
       start[2]   little-endian first block
       osver[2]   little-endian OS version
@@ -18,8 +20,8 @@ real stock OS disk before trusting writes -- run `probe` first):
       0x0000        free
       < nblocks     next block in chain
       >= 0x4000     marker (header/system block, end-of-chain)
-    The exact marker values are NOT hard-coded for writing: `put` copies
-    the end-of-chain and system codes it observes in the image it edits.
+    Akai disks use 0x4000 for header blocks and 0xC000 for end-of-chain;
+    `put` still copies the codes it observes in the image it edits.
   * Volume label (12 bytes, Akai charset) right after the FAT.
 """
 
@@ -84,7 +86,7 @@ class Entry:
 
     @property
     def used(self):
-        return self.size != 0 or self.start != 0 or any(self.name_raw)
+        return self.type != 0
 
     @property
     def name(self):
@@ -155,6 +157,11 @@ class AkaiFloppy:
         return bytes(out[:e.size])
 
     def find(self, name):
+        """Find a used entry by name, or by slot as '#N' (the S1100 OS file
+        has no printable name)."""
+        if name.startswith("#"):
+            e = list(self.entries())[int(name[1:])]
+            return e if e.used else None
         for e in self.entries():
             if e.used and e.name == name.upper().rstrip():
                 return e
@@ -203,8 +210,8 @@ class AkaiFloppy:
             chunk = payload[i * BLOCK:(i + 1) * BLOCK]
             self.data[b * BLOCK:(b + 1) * BLOCK] = chunk.ljust(BLOCK, b"\0")
             self.set_fat(b, blocks[i + 1] if i + 1 < need else eof_code)
-        slot.name_raw = akai_encode(name)
-        slot.unk = template.unk if template else bytes(4)
+        slot.name_raw = template.name_raw if template else akai_encode(name)
+        slot.unk = template.unk if template else b"\x20" * 4
         slot.type = ftype
         slot.size = len(payload)
         slot.start = blocks[0]
@@ -221,7 +228,38 @@ class AkaiFloppy:
         if eof_code is None:
             eof_code = self.fat(self.chain(old.start, old.size)[-1])
         self.delete(old)
-        return self.put(name, payload, old.type, old.osver, eof_code, template=old)
+        return self.put(old.name, payload, old.type, old.osver, eof_code, template=old)
+
+    def defragment(self):
+        """Rewrite all files contiguously in slot order, keeping their
+        directory entries. The ROM OS loader may not follow fragmented
+        chains, so images we produce never contain any."""
+        eof, _ = self.observed_codes()
+        if len(eof) > 1:
+            raise DiskError(f"mixed end-of-chain codes {eof}")
+        eof_code = next(iter(eof), 0xC000)
+        files = [(e, self.read_file(e)) for e in self.entries() if e.used]
+        header = [b for b in range(self.nblocks) if self.fat(b) >= MARKER_MIN
+                  and not any(b in self.chain(e.start, e.size) for e, _ in files)]
+        for b in range(self.nblocks):
+            if b not in header:
+                self.set_fat(b, 0)
+        nxt = max(header) + 1 if header else 0
+        for e, data in files:
+            need = max(1, -(-len(data) // BLOCK))
+            blocks = list(range(nxt, nxt + need))
+            if blocks[-1] >= self.nblocks:
+                raise DiskError("disk full while defragmenting")
+            for i, b in enumerate(blocks):
+                self.data[b * BLOCK:(b + 1) * BLOCK] = data[i * BLOCK:(i + 1) * BLOCK].ljust(BLOCK, b"\0")
+                self.set_fat(b, blocks[i + 1] if i + 1 < need else eof_code)
+            e.start = blocks[0]
+            self.write_entry(e)
+            nxt += need
+
+    def contiguous(self, e):
+        c = self.chain(e.start, e.size)
+        return c == list(range(c[0], c[0] + len(c)))
 
     def check(self):
         """Self-consistency check; returns list of problems (empty = OK)."""
@@ -258,7 +296,7 @@ def cmd_ls(args):
     print(f"Volume {d.label!r} ({d.density})")
     for e in d.entries():
         if e.used:
-            print(f"{e.index:2d}  {e.name:<12}  type=0x{e.type:02x}  size={e.size:8d}  "
+            print(f"#{e.index:<2d} {e.name:<12}  type=0x{e.type:02x}  size={e.size:8d}  "
                   f"start={e.start:4d}  osver=0x{e.osver:04x}  unk={e.unk.hex()}")
     return 0
 
@@ -282,6 +320,9 @@ def cmd_put(args):
         if not args.replace:
             raise DiskError(f"{args.name!r} exists; use --replace")
         e = d.replace(args.name, payload, args.eof_code)
+        if not d.contiguous(e):
+            d.defragment()
+            e = d.find(f"#{e.index}")
     else:
         if args.type is None:
             raise DiskError("--type required for a new file")

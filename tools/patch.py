@@ -25,11 +25,20 @@ Mods: extra spec files can be passed after the base spec. Their
 tables become NASM defines (e.g. MOD_VINTAGE = 1) so the payload compiles
 in only the selected features.
 
-`asm` patches are assembled with `bits 16`, `cpu 186` and `org` set to the
-patch's `org` key (default: the file offset). These NASM macros are defined
-for both the payload and asm patches:
+Segments: the OS loader copies parts of the file to different runtime
+segments, declared as [[segment]] {seg, file_base}. A patch with `seg` is
+assembled at its runtime offset in that segment; the payload's
+`segment` places it the same way.
+
+`asm` patches are assembled with `bits 16`, `cpu 186` and `org` set to
+the patch's `org` key, else its runtime offset (`seg`), else the file
+offset. NASM macros defined for the payload and asm patches:
   PAYLOAD_OFF   file offset where the payload starts
+  PAYLOAD_SEG   runtime segment of the payload (if `segment` is set)
+  PAYLOAD_ORG   runtime offset of the payload in that segment
   OS_SIZE       size of the unpatched OS
+  OUT_SIZE      size of the patched OS (patches only)
+  OUT_PARAS     OUT_SIZE in 16-byte paragraphs, rounded up (patches only)
 """
 
 import argparse
@@ -125,7 +134,24 @@ def merge_specs(specs):
     return merged
 
 
-def build(spec, os_data, spec_dir):
+def segment_bases(spec):
+    """[[segment]] entries map a runtime segment to the file offset that the
+    OS loader copies to its offset 0 (see docs/os-map.md)."""
+    return {seg["seg"]: seg["file_base"] for seg in spec.get("segment", [])}
+
+
+def runtime_org(bases, seg, file_off, what):
+    if seg is None:
+        return file_off
+    if seg not in bases:
+        raise PatchError(f"{what}: segment 0x{seg:04x} not declared in [[segment]]")
+    org = file_off - bases[seg]
+    if not 0 <= org < 0x10000:
+        raise PatchError(f"{what}: file offset 0x{file_off:x} is outside segment 0x{seg:04x}")
+    return org
+
+
+def build(spec, os_data, spec_dir, with_payload=True):
     base = spec.get("base", {})
     want = base.get("sha256")
     if want:
@@ -133,17 +159,37 @@ def build(spec, os_data, spec_dir):
         if got != want.lower():
             raise PatchError(f"input sha256 {got} does not match spec {want}")
 
-    out = bytearray(os_data)
-    payload_cfg = spec.get("payload")
+    bases = segment_bases(spec)
+    payload_cfg = spec.get("payload") if with_payload else None
     align = payload_cfg.get("align", 16) if payload_cfg else 16
-    payload_off = -(-len(out) // align) * align
+    payload_off = -(-len(os_data) // align) * align
     defines = {**spec.get("defines", {}), "PAYLOAD_OFF": payload_off, "OS_SIZE": len(os_data)}
+
+    # Payload first: patches may need its runtime address and the final size.
+    code = b""
+    if payload_cfg:
+        seg = payload_cfg.get("segment")
+        defines["PAYLOAD_ORG"] = runtime_org(bases, seg, payload_off, "payload")
+        if seg is not None:
+            defines["PAYLOAD_SEG"] = seg
+        src_path = os.path.join(spec_dir, payload_cfg["source"])
+        with open(src_path) as f:
+            code = nasm(f.read(), defines, os.path.dirname(src_path))
+        if seg is not None and defines["PAYLOAD_ORG"] + len(code) > 0x10000:
+            raise PatchError(f"payload ({len(code)} bytes) overflows segment 0x{seg:04x}")
+    out_size = payload_off + len(code) if code else len(os_data)
+    defines["OUT_SIZE"] = out_size
+    defines["OUT_PARAS"] = -(-out_size // 16)
 
     # Locate everything against the *original* bytes first so patches
     # cannot accidentally match each other's output.
     planned = []
     for patch in spec.get("patch", []):
+        name = patch.get("name", "?")
         if not patch.get("enabled", True):
+            continue
+        if patch.get("requires_payload") and not code:
+            print(f"  skipped {name:<24} (no payload)")
             continue
         off, orig = locate(os_data, patch)
         if "replace" in patch:
@@ -151,34 +197,33 @@ def build(spec, os_data, spec_dir):
         elif "replace_text" in patch:
             new = patch["replace_text"].encode("latin-1")
             if len(new) != len(orig):
-                raise PatchError(f"patch {patch['name']!r}: replace_text must be {len(orig)} bytes, got {len(new)}")
+                raise PatchError(f"patch {name!r}: replace_text must be {len(orig)} bytes, got {len(new)}")
         elif "asm" in patch:
-            org = patch.get("org", off)
+            org = patch.get("org", runtime_org(bases, patch.get("seg"), off, f"patch {name!r}"))
             new = nasm(f"bits 16\ncpu 186\norg {org}\n{patch['asm']}\n", defines, spec_dir)
-            lint_186(new, patch.get("name", "?"))
+            lint_186(new, name)
         else:
-            raise PatchError(f"patch {patch.get('name')!r}: no replacement given")
+            raise PatchError(f"patch {name!r}: no replacement given")
         if "max_len" in patch and len(new) > patch["max_len"]:
-            raise PatchError(f"patch {patch['name']!r}: {len(new)} bytes exceeds max_len {patch['max_len']}")
-        planned.append((patch.get("name", "?"), off, new))
+            raise PatchError(f"patch {name!r}: {len(new)} bytes exceeds max_len {patch['max_len']}")
+        planned.append((name, off, new))
 
     planned.sort(key=lambda p: p[1])
     for (n1, o1, b1), (n2, o2, _) in zip(planned, planned[1:]):
         if o1 + len(b1) > o2:
             raise PatchError(f"patches {n1!r} and {n2!r} overlap")
+    out = bytearray(os_data)
     for name, off, new in planned:
         if off + len(new) > len(out):
             raise PatchError(f"patch {name!r} runs past end of OS")
         out[off:off + len(new)] = new
         print(f"  patched {name:<24} 0x{off:06x}  {len(new)} bytes")
 
-    if payload_cfg:
-        src_path = os.path.join(spec_dir, payload_cfg["source"])
-        with open(src_path) as f:
-            code = nasm(f.read(), defines, os.path.dirname(src_path))
+    if code:
         out.extend(b"\0" * (payload_off - len(out)))
         out.extend(code)
-        print(f"  payload {payload_cfg['source']} at 0x{payload_off:06x}  {len(code)} bytes")
+        where = f" = {payload_cfg['segment']:04x}:{defines['PAYLOAD_ORG']:04x}" if "segment" in payload_cfg else ""
+        print(f"  payload {payload_cfg['source']} at 0x{payload_off:06x}{where}  {len(code)} bytes")
 
     return bytes(out), planned
 
@@ -201,6 +246,8 @@ def main(argv=None):
     p.add_argument("output")
     p.add_argument("spec", help="base spec (sets [payload])")
     p.add_argument("mods", nargs="*", help="mod specs to include")
+    p.add_argument("--no-payload", action="store_true",
+                   help="text/data patches only: keep the OS size unchanged")
     args = p.parse_args(argv)
     specs = []
     for path in [args.spec, *args.mods]:
@@ -210,7 +257,7 @@ def main(argv=None):
         os_data = f.read()
     try:
         spec = merge_specs(specs)
-        out, _ = build(spec, os_data, os.path.dirname(os.path.abspath(args.spec)))
+        out, _ = build(spec, os_data, os.path.dirname(os.path.abspath(args.spec)), not args.no_payload)
     except PatchError as exc:
         print("error:", exc, file=sys.stderr)
         return 2

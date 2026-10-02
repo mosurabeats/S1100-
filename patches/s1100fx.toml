@@ -1,18 +1,44 @@
 # S1100FX base patch spec -- applied by tools/patch.py to the stock OS file
-# extracted from an Akai S1100 OS floppy.
+# from the Akai S1100 / S1100EX OS v4.30 disk (S11K-430.EXE).
 #
 # Every patch is checked against the original bytes before it is applied,
 # so this file only works on the exact OS version it was written for.
-# Record that version's hash below once you have it:
-#   sha256sum build/stock_os.bin
+# Layout details: docs/os-map.md.
 
 [base]
-# os_version = "4.40"
-# sha256 = "<fill in>"
+os_version = "S1100 4.30 (disk osver 0x091e)"
+sha256 = "6a32cce747f20ebad431ad8bb5d0add7c4e946d9d061f157c216894e70a33272"
 
+# The ROM loads the OS file at physical 0; the stub at 0000:0040 then copies
+# these file ranges to their runtime segments and jumps to 1000:0000.
+[[segment]]
+seg = 0x0000
+file_base = 0x00000     # 0x00000-0x0547F stays at 0000:0000
+
+[[segment]]
+seg = 0x1000
+file_base = 0x05480     # 0x05480-0x1545F -> 1000:0000 (main code)
+
+[[segment]]
+seg = 0x3000
+file_base = 0x15460     # 0x15460-end     -> 3000:0000
+
+# New code is appended to the file, so it lands at the end of the 0x3000
+# segment (3000:AA80 onwards for v4.30).
 [payload]
 source = "../src/fx.asm"
 align = 16
+segment = 0x3000
+
+# The stub copies (0x1FEE - 0x1546) paragraphs to 0x3000, where 0x1FEE is
+# the stock file size in paragraphs. Grow it to include the payload.
+[[patch]]
+name = "loader-copy-length"
+requires_payload = true
+offset = 0x75
+expect = "b8 ee 1f"          # mov ax, 0x1FEE
+asm = "mov ax, OUT_PARAS"
+max_len = 3
 
 # Features live in mods/*.toml and are selected at build time:
 #   make MODS="banner vintage autochop"

@@ -10,34 +10,28 @@
   bit-exact against the Python model.
 - Unit tests: `make test`.
 
-## M1: Prove the pipeline (needs a stock OS disk)
-1. Image a stock S1100 OS floppy to `original/S1100_OS.img` (1,638,400
-   bytes). Use a Greaseweazle/KryoFlux, or copy a known-good image from a
-   Gotek.
-2. `python3 tools/akaidisk.py probe original/S1100_OS.img`. This checks
-   the format assumptions against a real disk. If it reports problems, fix
-   `akaidisk.py` before going further.
-3. `make ls`, then `make OS_NAME="<name>"` with the OS file's name.
-4. `python3 tools/disasm.py strings build/stock_os.bin | less`. Find the
-   boot banner, put it in `patches/s1100fx.toml`, and enable the
-   `boot-banner` patch.
-5. Boot the S1100 from `build/S1100FX.img` and check the banner changed.
-   **This is the first real-hardware milestone.**
+## M1: Prove the pipeline on hardware ← **next, needs your S1100**
+The stock OS is extracted from Akai's `S11K-430.EXE` (`tools/sxd2img.py`),
+and both test images boot like stock in the emulator.
 
-## M2: Map the OS
-- Also dump both EPROMs. The ROM's disk loader shows the RAM load
-  address and entry point.
-- Load `stock_os.bin` into Ghidra (language `x86:LE:16:Real Mode`) at the
-  load address you found.
-- Find the V50 relocation-register writes (see `hardware.md`), then label
-  the ICU, timer and DMA ports.
-- Find these routines (string cross-references help: `disasm.py xref`):
-  LCD print, key/knob read, main loop, sampling (`Recording` and similar
-  strings), playback IRQ.
-- Record the findings in `docs/os-map.md` so patches can refer to them.
+1. `make first-test` → `build/S1100FX-first-test.img`. Text change only,
+   same file size. On the MIDI page, `PROGRAMS IN MEMORY` should read
+   `S1100FX  PROGRAMS`. This proves that our disk images and patches work
+   on the machine.
+2. `make` → `build/S1100FX.img`. Adds the 586-byte payload (nothing calls
+   it yet), which pushes the OS file over 128 KB. It should behave exactly
+   like stock. If (1) works and (2) doesn't, the boot ROM limits the OS
+   file size, and new code will have to be loaded another way.
+
+## M2: Map the OS (in progress, see os-map.md)
+- ✅ Load address, boot stub, segment layout, V50 peripherals, MIDI UART.
+- ✅ Emulated boot as far as the floppy controller (`tools/s1100emu.py`).
+- ☐ Model the `0x7814` device so the emulated boot reaches the main loop.
+- ☐ LCD output path, main loop and key/wheel dispatch.
+- ☐ Sample RAM access and data format (offset binary?).
 
 ## M3: First hooks
-- Hook the main loop (vector `PAYLOAD_OFF + 3`) and add an S1100FX page to
+- Hook the main loop (far call to `PAYLOAD_SEG:PAYLOAD_ORG + 3`) and add an S1100FX page to
   the Utility menu showing the build date and selected mods.
 - Find how the OS reads and writes sample RAM in chunks (the EDIT SAMPLE
   code). Both DSP cores are already streaming, so they plug straight in.
@@ -52,7 +46,7 @@ Most needed OS knowledge first:
 | `equal-chop` | Model (`vintage.py chop --equal`) | Same as `autochop` |
 | `lazychop` | Nothing yet | Playback position; mark regions with MIDI keys or the front panel while the sample plays (like vubeatz Lazy chop) |
 | `transpose` | Nothing yet | Program/keygroup tuning fields; a whole-program transpose and wider tuning range |
-| `inputthru` | Nothing yet | ADC/DAC ports and sample-rate timer IRQ (vector `PAYLOAD_OFF + 6`): live input through the vintage presets |
+| `inputthru` | Nothing yet | ADC/DAC ports and sample-rate timer IRQ (`PAYLOAD_ORG + 6`): live input through the vintage presets |
 
 **CPU budget (estimate).** In the emulator, `crush` runs about 16
 instructions per sample and `chop` about 32 (two `IMUL`s). On a 10 MHz
