@@ -38,8 +38,8 @@ readable:
   real-time processing)
 - everything else → custom gate arrays, LCD, front-panel, FDC, SCSI
 
-> **Update:** the OS map, the V50 peripheral addresses and the boot
-> sequence are now in [os-map.md](os-map.md).
+> **Update:** the OS map, the V50 peripheral addresses, the chip map and
+> the boot sequence are now in [os-map.md](os-map.md).
 
 ## Unknowns to resolve (milestone 2)
 
@@ -48,7 +48,9 @@ readable:
    memory image starting with the interrupt vectors.
 3. Which I/O ports are the ADC and DAC (or the gate-array registers in
    front of them), and how they're clocked.
-4. LCD write routine (40×8 character LCD) and front-panel/knob input.
+4. LCD write routine and front-panel/knob input. The hardware is known
+   (LC7981 240×64 graphics LCD, 8255 key matrix, gray-code wheels); the OS
+   routines are still to find.
 5. Free RAM we can use for new code and state.
 
 ## Sources

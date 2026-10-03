@@ -3,3 +3,4 @@ original/*
 build/
 __pycache__/
 *.pyc
+emu/bin/

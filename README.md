@@ -19,8 +19,9 @@ patcher on your own stock OS disk and choose which mods go in.
 | Lazy chop, input thru, program transpose, more | See [roadmap](docs/roadmap.md) | Planned |
 
 > **Status:** the build runs on Akai's S1100 OS v4.30. The OS memory map
-> is worked out ([docs/os-map.md](docs/os-map.md)), and patched builds boot
-> like stock in an emulator. The DSP cores are bit-exact against a Python
+> is worked out ([docs/os-map.md](docs/os-map.md)). Patched builds boot
+> to the main page in a MAME-based test machine, where regression tests
+> press keys and read the LCD ([docs/emulator.md](docs/emulator.md)). The DSP cores are bit-exact against a Python
 > model. **Nothing has run on a real S1100 yet:** the two test images in
 > [roadmap M1](docs/roadmap.md) are the next step. The mods are not yet
 > hooked into the OS menus.
@@ -44,7 +45,9 @@ editing it, run `make presets` to regenerate the assembler table.
 |---|---|
 | `tools/sxd2img.py` | Extract the floppy image from Akai's DOS OS-update EXE |
 | `tools/akaidisk.py` | Read/write Akai S1000-format floppy images |
-| `tools/s1100emu.py` | Boot an OS file in an emulator; compare patched vs stock |
+| `tools/s1100emu.py` | Quick CPU-only boot check (Unicorn); compare patched vs stock |
+| `tools/s1100test.py` | Drive the MAME test machine: boot, press keys, read the LCD as text |
+| `emu/` | MAME test machine (`s1100fx`): build script, driver addition, Lua harness |
 | `tools/patch.py` | Apply a verified patch spec + append assembled code |
 | `tools/disasm.py` | Reverse-engineering helpers (strings, I/O map, xrefs) |
 | `tools/vintage.py` | Reference model for the DSP + WAV preview tool |
@@ -72,7 +75,16 @@ program in an emulator, so you don't need a PC with a floppy drive.
 make first-test      # -> build/S1100FX-first-test.img  (text change only)
 make                 # -> build/S1100FX.img  (MODS="banner vintage autochop")
 make test
-python3 tools/s1100emu.py build/s1100fx_os.bin --compare build/stock_os.bin
+```
+
+## Test in the emulator
+
+```sh
+make emu                                              # one-time MAME build (30-60 min)
+python3 tools/s1100test.py boot build/S1100FX.img     # LCD after boot, as text
+python3 tools/s1100test.py boot build/S1100FX.img --press KEY4:Disk
+make test-emu                                         # regression tests
+emu/bin/s1100fx s1100fx -quickload build/S1100FX.img -flop build/S1100FX.img   # interactive
 ```
 
 Write an image to an HD floppy as raw sectors, or copy it to a Gotek
@@ -82,6 +94,7 @@ Remove the disk and power-cycle to return to stock.
 ## Docs
 
 - [OS map](docs/os-map.md): boot sequence, segments, I/O ports
+- [Emulator](docs/emulator.md): the MAME test machine and regression tests
 - [Approach](docs/approach.md): how S900FX/S950FX work and how this
   project copies them
 - [Hardware](docs/hardware.md): CPU, memory, what still needs verifying

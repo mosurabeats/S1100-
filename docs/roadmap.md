@@ -9,6 +9,7 @@
 - `tools/vintage.py` + `src/dsp/`: vintage and auto-chop DSP, emulator-tested
   bit-exact against the Python model.
 - Unit tests: `make test`.
+- MAME test machine `s1100fx` + regression tests: `make emu`, `make test-emu`.
 
 ## M1: Prove the pipeline on hardware ← **next, needs your S1100**
 The stock OS is extracted from Akai's `S11K-430.EXE` (`tools/sxd2img.py`),
@@ -26,8 +27,10 @@ and both test images boot like stock in the emulator.
 ## M2: Map the OS (in progress, see os-map.md)
 - ✅ Load address, boot stub, segment layout, V50 peripherals, MIDI UART.
 - ✅ Emulated boot as far as the floppy controller (`tools/s1100emu.py`).
-- ☐ Model the `0x7814` device so the emulated boot reaches the main loop.
-- ☐ LCD output path, main loop and key/wheel dispatch.
+- ✅ Full emulated boot to the main page in MAME, with LCD text, keys and
+  floppy access: the regression test environment (docs/emulator.md).
+- ✅ Chip map (FDC, LCD, PPI, latch, voice chip, effects DSP) and the OS font.
+- ☐ Text-drawing routine, main loop and key/wheel dispatch.
 - ☐ Sample RAM access and data format (offset binary?).
 
 ## M3: First hooks

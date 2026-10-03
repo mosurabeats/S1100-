@@ -46,17 +46,29 @@ boot. OPHA = `0x80`, so the internal peripherals sit at `0x80xx`:
 | Serial (SULA `0x20`) | `0x8020` data, `0x8022` status/cmd | **MIDI**. Bit 0 of status = TX ready. TX routine `1000:13A2`, RX ISR = INT 9 `1000:13B1` |
 | Timer (TULA `0x30`) | `0x8030–0x8036` | control writes `0x24`, `0x56`, `0xA4` |
 
-## Other I/O seen during boot (meaning mostly **open**)
+## Other I/O
 
-| Ports | Seen | Guess |
+Identified with MAME's S1100 driver (`src/mame/akai/s1000.cpp`, by Devin
+Acker), and confirmed by booting the OS in it (docs/emulator.md):
+
+| Ports | Chip | Notes |
 |---|---|---|
-| `0x2000` | read in INT `0x0E`/`0x0F` handlers (`0000:00BB`, `0000:00D6`): bit `0x20`/`0x80` decides ±1 on counters at `0000:00F7–00FA` | front-panel data wheel / encoders |
-| `0x2002`–`0x2006` | init writes; `0x2004 ← 0xAA` in the INT 0 handler | panel/LED/watchdog |
-| `0x4000–0x40BE`, `0x5060–0x51FE` | one write each at init | voice/DSP chip registers (16 voices × several params) |
-| `0x40E0`, `0x40E8`, `0x40F0` | the most-used ports in the code | voice/DSP control |
-| `0x6000`/`0x6004` | index/data pairs, regs `0,1,2,3,4,8–0xC`; polls `0x6006` | SCSI controller (layout looks like an MB89352) |
-| `0x7780–0x77E0`, `0x7800–0x781E` | boot waits forever on `0x7814` | floppy controller (next device to model) |
-| `0x3000`–`0x301E` | init | **open** |
+| `0x0000–0x001F` | MB89352 SCSI controller | |
+| `0x1000`/`0x1002` | µPD72069 floppy controller (µPD765 family) | status `0x1000` (RQM/DIO bits), data `0x1002` |
+| `0x2000–0x2006` | 8255 PPI | port A = key matrix and data/cursor wheels, B = key row select, C = LEDs; `0x2006 ← 0x90` |
+| `0x3000–0x3FFF` | 74HC259 latch / footswitch input | ADC clock, mute, floppy select/motor/density, FDC reset |
+| `0x4000–0x5FFF` | Akai L6009 voice chip | sample playback registers |
+| `0x6000–0x6006` | LC7981 (HD61830-compatible) LCD controller | data `0x6000`, command `0x6004`, status `0x6006`. 240×64 graphics mode |
+| `0x7800–0x781E` | DSP56001 host interface (effects) | microcode loaded as 512 × 24-bit words through `0x780A/C/E`; status `0x7814` (bit 1 ready, bit 4 busy) |
+| `INTP5`/`INTP6` | cursor/data wheels | gray code; handlers `0000:00BB`, `0000:00D6` |
+
+## LCD text
+
+The OS draws text itself in graphics mode, with a 5×7 font in 6-pixel
+cells: 97 glyphs, 8 bytes each, ASCII order from `0x20`, at file offset
+`0x19CF0` (3000:4890). The leftmost pixel is bit 0. `tools/s1100test.py`
+uses this font (read from the OS under test) to turn LCD snapshots back
+into text.
 
 ## Strings
 
@@ -75,10 +87,11 @@ RAM uses the same format. If it does, the DSP cores (signed int16) need
 
 ## Next targets
 
-1. Model the device at `0x7814` well enough to get past it, so the emulated
-   boot reaches the main loop and its first LCD writes.
-2. Find the LCD output path. Following the code that references
-   `PROGRAMS IN MEMORY` (3000:1362) is the shortcut.
+1. ✅ Boot to the main page in an emulator: done in MAME (docs/emulator.md).
+2. Find the OS's text-drawing routine. It reads the font at 3000:4890,
+   and following the code that references `PROGRAMS IN MEMORY` (3000:1362)
+   is another shortcut. MAME's debugger (`-debug`) can break on reads of
+   the font.
 3. Find the main loop and its key/wheel dispatch, then add the first
    `fx_tick` hook.
 4. Find how sample RAM is read and written (EDIT SAMPLE functions).

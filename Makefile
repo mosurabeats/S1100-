@@ -45,10 +45,16 @@ build:
 test:
 	$(PY) -m unittest discover -s tests -v
 
+emu:
+	emu/mame/build.sh
+
+test-emu:
+	$(PY) -m unittest tests.test_mame -v
+
 presets:
 	$(PY) tools/vintage.py gen-inc > src/dsp/presets.inc
 
 clean:
 	rm -rf build
 
-.PHONY: all first-test ls test presets clean
+.PHONY: all first-test ls test emu test-emu presets clean

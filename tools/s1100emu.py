@@ -24,6 +24,7 @@ ENTRY = 0x0040
 # Port reads that must not return 0 for the boot to progress.
 PORT_DEFAULTS = {
     0x8022: 0x05,  # V50 serial (MIDI) status: TX ready + TX empty
+    0x7814: 0x02,  # effects DSP status: ready (bit 1), not busy (bit 4)
 }
 
 
